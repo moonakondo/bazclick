@@ -173,7 +173,7 @@ export default function HomePage() {
                 </div>
                 <div>
                   <p className="text-3xl sm:text-4xl font-extrabold text-slate-900">5,000+</p>
-                  <p class="text-xs sm:text-sm font-medium text-slate-500 mt-1 uppercase tracking-wider">Curated Tech Articles</p>
+                  <p className="text-xs sm:text-sm font-medium text-slate-500 mt-1 uppercase tracking-wider">Curated Tech Articles</p>
                 </div>
                 <div>
                   <p className="text-3xl sm:text-4xl font-extrabold text-slate-900">1,000+</p>
@@ -297,7 +297,7 @@ export default function HomePage() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <div className="flex flex-col md:flex-row md:items-end justify-between mb-12">
                 <div>
-                  <span class="text-xs font-bold text-blue-600 uppercase tracking-widest">Productivity Unleashed</span>
+                  <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Productivity Unleashed</span>
                   <h2 className="text-3xl font-extrabold text-slate-900 mt-1">Popular AI Tools</h2>
                 </div>
                 <a href="#" className="mt-4 md:mt-0 text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1">
@@ -910,7 +910,7 @@ export default function HomePage() {
                 <p className="text-xs font-bold text-white uppercase tracking-wider mb-4">Resources</p>
                 <ul className="space-y-2.5 text-xs">
                   <li><a href="#news" className="hover:text-white transition-colors">Global News</a></li>
-                  <li><a href="#blog" class="hover:text-white transition-colors">Growth Blog</a></li>
+                  <li><a href="#blog" className="hover:text-white transition-colors">Growth Blog</a></li>
                   <li><a href="#" className="hover:text-white transition-colors">Documentation</a></li>
                   <li><a href="#roadmap" className="hover:text-white transition-colors">Public Roadmap</a></li>
                 </ul>
