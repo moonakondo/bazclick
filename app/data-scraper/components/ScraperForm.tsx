@@ -16,38 +16,51 @@ export default function ScraperForm({
   onStatusUpdate,
 }: ScraperFormProps) {
   const [inputVal, setInputVal] = useState("");
-  const [sources, setSources] = useState<string[]>(["google", "yelp", "yellowpages"]);
+  const [sources, setSources] = useState({
+    google: true,
+    yelp: true,
+    yellowpages: true,
+  });
 
-  function toggleSource(source: string) {
-    setSources((prev) =>
-      prev.includes(source) ? prev.filter((s) => s !== source) : [...prev, source]
-    );
-  }
+  const handleSourceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSources({ ...sources, [e.target.name]: e.target.checked });
+  };
 
-  async function handleSubmit(e: React.FormEvent) {
+  const handleStartScraping = async (e: React.FormEvent) => {
     e.preventDefault();
-    const inputs = inputVal
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    if (!inputVal.trim()) return;
 
-    if (!inputs.length) return;
-
-    onLoading(true);
     onClearResults();
+    onLoading(true);
     onStatusUpdate("Connecting to scrapers...");
+
+    const selectedSources = Object.keys(sources).filter(
+      (key) => sources[key as keyof typeof sources]
+    );
+
+    const activeInputs = inputVal
+      .split("\n")
+      .map((i) => i.trim())
+      .filter(Boolean);
 
     try {
       const response = await fetch("/api/scraper/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inputs, sources }),
+        body: JSON.stringify({
+          inputs: activeInputs,
+          sources: selectedSources,
+        }),
       });
 
-      if (!response.body) throw new Error("No readable stream received.");
+      if (!response.ok || !response.body) {
+        alert("Failed to establish stream connection with scraper.");
+        onLoading(false);
+        return;
+      }
 
       const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+      const decoder = new TextDecoder("utf-8");
       let buffer = "";
 
       while (true) {
@@ -55,62 +68,73 @@ export default function ScraperForm({
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || ""; // Retain incomplete chunk in buffer
 
-        for (const line of lines) {
+        for (const part of parts) {
+          const line = part.trim();
           if (line.startsWith("data: ")) {
-            const data = JSON.parse(line.replace("data: ", ""));
+            try {
+              const data = JSON.parse(line.replace("data: ", ""));
 
-            if (data.status === "status" || data.status === "progress") {
-              onStatusUpdate(data.message);
-            } else if (data.status === "item") {
-              onItemAdded(data.item);
-            } else if (data.status === "error") {
-              alert(data.error);
+              if (data.status === "status") {
+                onStatusUpdate(data.message);
+              } else if (data.status === "item") {
+                onItemAdded(data.item);
+                if (data.message) onStatusUpdate(data.message);
+              } else if (data.status === "complete") {
+                onStatusUpdate(data.message || "Scraping completed!");
+              } else if (data.status === "error") {
+                alert(`Scraper Notice: ${data.error}`);
+              }
+            } catch (err) {
+              // Ignore partial chunk parse failures
             }
           }
         }
       }
     } catch (err: any) {
-      alert(err.message || "An error occurred during live scraping.");
+      console.warn("Stream read ended or dropped gracefully:", err);
     } finally {
+      // ALWAYS keep collected leads intact and reset loading spinner gently
       onLoading(false);
-      onStatusUpdate("");
     }
-  }
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleStartScraping} className="space-y-4">
       <div>
-        <label className="block text-xs font-semibold uppercase text-slate-500 mb-2">
-          Search Sources
+        <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+          SEARCH SOURCES
         </label>
-        <div className="flex gap-4 text-xs font-medium text-slate-700">
-          <label className="flex items-center gap-1.5 cursor-pointer">
+        <div className="flex flex-wrap gap-4 text-sm font-medium text-slate-700">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={sources.includes("google")}
-              onChange={() => toggleSource("google")}
-              className="rounded text-blue-600 focus:ring-blue-500"
+              name="google"
+              checked={sources.google}
+              onChange={handleSourceChange}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             />
             Google Maps
           </label>
-          <label className="flex items-center gap-1.5 cursor-pointer">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={sources.includes("yelp")}
-              onChange={() => toggleSource("yelp")}
-              className="rounded text-blue-600 focus:ring-blue-500"
+              name="yelp"
+              checked={sources.yelp}
+              onChange={handleSourceChange}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             />
             Yelp
           </label>
-          <label className="flex items-center gap-1.5 cursor-pointer">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={sources.includes("yellowpages")}
-              onChange={() => toggleSource("yellowpages")}
-              className="rounded text-blue-600 focus:ring-blue-500"
+              name="yellowpages"
+              checked={sources.yellowpages}
+              onChange={handleSourceChange}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
             />
             Yellow Pages
           </label>
@@ -119,17 +143,17 @@ export default function ScraperForm({
 
       <div>
         <textarea
-          rows={5}
           value={inputVal}
           onChange={(e) => setInputVal(e.target.value)}
-          placeholder="Enter keywords or Google Maps URLs (one per line)..."
-          className="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          placeholder="Enter keyword (e.g., Hotels Dhaka) OR paste Google Maps link..."
+          rows={4}
+          className="w-full rounded-xl border border-slate-200 p-3 text-sm text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
         />
       </div>
 
       <button
         type="submit"
-        className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-md shadow-blue-600/30 hover:bg-blue-700 transition"
+        className="w-full rounded-xl bg-blue-900 py-3 text-sm font-bold text-white hover:bg-blue-800 transition"
       >
         Start Scraping
       </button>

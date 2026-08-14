@@ -11,7 +11,7 @@ export interface RawListing {
 export async function scrapeGoogleMapsDetailed(
   page: any,
   keywordOrUrl: string,
-  targetCount = 100
+  targetCount = 20
 ): Promise<RawListing[]> {
   const isUrl = keywordOrUrl.startsWith("http");
   const targetUrl = isUrl
@@ -19,93 +19,95 @@ export async function scrapeGoogleMapsDetailed(
     : `https://www.google.com/maps/search/${encodeURIComponent(keywordOrUrl)}`;
 
   try {
-    // Set realistic viewport & user-agent
-    await page.setExtraHTTPHeaders({
-      "accept-language": "en-US,en;q=0.9",
-    });
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
 
-    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-
-    // Wait for either feed container or search result links
+    // Handle Google consent banner if presented
     try {
-      await page.waitForSelector('a[href*="/maps/place/"]', { timeout: 15000 });
-    } catch {
-      // If direct place links didn't load immediately, check if consent modal exists and pass
-      try {
-        const consentBtn = await page.$('form[action*="consent"] button');
-        if (consentBtn) await consentBtn.click();
-      } catch {}
+      const consentBtn = await page.$('form[action*="consent"] button');
+      if (consentBtn) await consentBtn.click();
+    } catch {}
+
+    // CASE 1: User passed a single Google Maps Place URL directly
+    if (isUrl && (targetUrl.includes("/maps/place/") || targetUrl.includes("goo.gl"))) {
+      await page.waitForSelector("h1", { timeout: 10000 });
+      
+      const item = await page.evaluate((placeUrl: string) => {
+        const name = document.querySelector("h1")?.textContent?.trim() || "";
+        const address =
+          document.querySelector('button[data-item-id="address"]')?.textContent?.trim() || "N/A";
+        const phone =
+          document.querySelector('button[data-item-id*="phone"]')?.textContent?.trim() || "N/A";
+        const websiteEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement;
+
+        return {
+          name,
+          address,
+          phone,
+          website: websiteEl ? websiteEl.href : "N/A",
+          google_maps_url: placeUrl,
+          source: "Google Maps",
+        };
+      }, targetUrl);
+
+      return item.name ? [item] : [];
     }
 
-    const linksSet = new Set<string>();
-    let previousSize = 0;
-    let sameCountTicks = 0;
+    // CASE 2: Search keyword or search result URL (feed list)
+    try {
+      await page.waitForSelector('div[role="feed"], a[href*="/maps/place/"]', { timeout: 10000 });
+    } catch {
+      return [];
+    }
 
-    while (linksSet.size < targetCount && sameCountTicks < 6) {
-      const urls: string[] = await page.evaluate(() => {
-        return Array.from(document.querySelectorAll('a[href*="/maps/place/"]'))
-          .map((a) => (a as HTMLAnchorElement).href)
-          .filter((h) => !h.includes("/search/"));
-      });
-
-      urls.forEach((u) => linksSet.add(u));
-
-      if (linksSet.size === previousSize) {
-        sameCountTicks++;
-      } else {
-        sameCountTicks = 0;
-        previousSize = linksSet.size;
-      }
-
-      // Scroll inside feed or window
+    // Scroll to load listings
+    for (let i = 0; i < 4; i++) {
       await page.evaluate(() => {
         const feed = document.querySelector('div[role="feed"]');
-        if (feed) {
-          feed.scrollTop += 3000;
-        } else {
-          window.scrollBy(0, 1000);
-        }
+        if (feed) feed.scrollTop += 2000;
+      });
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+
+    // Extract all visible items
+    const listings: RawListing[] = await page.evaluate(() => {
+      const items: RawListing[] = [];
+      const placeLinks = Array.from(document.querySelectorAll('a[href*="/maps/place/"]'));
+
+      placeLinks.forEach((link) => {
+        const href = (link as HTMLAnchorElement).href;
+        if (!href || href.includes("/search/")) return;
+
+        const card = link.closest('div[role="article"]') || link.parentElement?.parentElement;
+        if (!card) return;
+
+        const nameEl = card.querySelector("div.fontHeadlineSmall, .qBF1Pd, h1");
+        const name = nameEl?.textContent?.trim() || "";
+        if (!name) return;
+
+        const websiteEl = card.querySelector('a[data-value="Website"]') as HTMLAnchorElement;
+        const phoneEl = card.querySelector('button[data-item-id*="phone"]');
+
+        items.push({
+          name,
+          phone: phoneEl?.textContent?.trim() || "N/A",
+          address: "N/A",
+          website: websiteEl ? websiteEl.href : "N/A",
+          google_maps_url: href,
+          source: "Google Maps",
+        });
       });
 
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-
-    const listings: RawListing[] = [];
-    const links = Array.from(linksSet).slice(0, targetCount);
-
-    for (const url of links) {
-      try {
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 12000 });
-
-        const item = await page.evaluate((placeUrl: string) => {
-          const name = document.querySelector("h1")?.textContent?.trim() || "";
-          const address =
-            document.querySelector('button[data-item-id="address"]')?.textContent?.trim() || "N/A";
-          const phone =
-            document.querySelector('button[data-item-id*="phone"]')?.textContent?.trim() || "N/A";
-          const websiteEl = document.querySelector('a[data-item-id="authority"]') as HTMLAnchorElement;
-
-          return {
-            name,
-            address,
-            phone,
-            website: websiteEl ? websiteEl.href : "N/A",
-            google_maps_url: placeUrl,
-          };
-        }, url);
-
-        if (item.name) listings.push({ ...item, source: "Google Maps" });
-      } catch {
-        continue;
-      }
-    }
+      return items;
+    });
 
     return listings;
   } catch (error) {
-    console.error("Google Maps scraping error:", error);
+    console.error("Google Maps Scraper Error:", error);
     return [];
   }
 }
+
+//Endeddd
 
 // Multi-page pagination loop for Yelp (?start=0, ?start=10, ?start=20...)
 export async function scrapeYelpPublic(

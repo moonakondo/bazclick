@@ -11,34 +11,32 @@ export default function ScraperProgress({
   statusText,
   count,
 }: ScraperProgressProps) {
-  if (!loading && count === 0) return null;
+  // Show section if currently scraping OR if we have collected results
+  if (!loading && count === 0 && !statusText) return null;
 
   return (
-    <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 shadow-sm backdrop-blur-sm">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {loading ? (
-            <div className="relative flex h-3.5 w-3.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
-              <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-blue-600"></span>
-            </div>
-          ) : (
-            <div className="h-3.5 w-3.5 rounded-full bg-green-500" />
-          )}
-
-          <div>
-            <h4 className="text-sm font-bold text-slate-900">
-              {loading ? "Scraping Active" : "Scraping Completed"}
-            </h4>
-            <p className="text-xs text-blue-700 font-semibold mt-0.5">
-              {statusText || (loading ? `${count} Leads Scraped & Still Finding...` : `${count} Leads Scraped totally.`)}
-            </p>
-          </div>
+    <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        {loading ? (
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-600"></span>
+          </span>
+        ) : (
+          <span className="inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+        )}
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            {loading ? "Scraping Active" : "Scraping Finished"}
+          </p>
+          <p className="text-sm font-medium text-slate-700">
+            {statusText || (loading ? "Processing..." : "Done")}
+          </p>
         </div>
+      </div>
 
-        <span className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-all duration-300">
-          {count} Leads Found
-        </span>
+      <div className="rounded-full bg-blue-50 px-4 py-1.5 text-xs font-bold text-blue-700">
+        {count} Leads Found
       </div>
     </div>
   );

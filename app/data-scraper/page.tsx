@@ -57,7 +57,7 @@ export default function DataScraperPage() {
                 <h2 className="mb-4 text-xl font-bold text-slate-900">Batch Spreadsheet Processing</h2>
                 <UploadBox
                   onInputsParsed={(inputs) => {
-                    // Triggers scraping with parsed items
+                    // Pre-fill or start batch scraping logic if needed
                   }}
                 />
               </div>
