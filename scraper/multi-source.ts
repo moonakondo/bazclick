@@ -7,30 +7,42 @@ export interface RawListing {
   source: string;
 }
 
-// Infinite scroll for Google Maps (fetches up to target limit)
+// Scrapes Google Maps from either a keyword, shortened link, or full search/place URL
 export async function scrapeGoogleMapsDetailed(
   page: any,
   keywordOrUrl: string,
-  targetCount = 20
+  targetCount = 30
 ): Promise<RawListing[]> {
   const isUrl = keywordOrUrl.startsWith("http");
-  const targetUrl = isUrl
-    ? keywordOrUrl
-    : `https://www.google.com/maps/search/${encodeURIComponent(keywordOrUrl)}`;
+  let targetUrl = keywordOrUrl;
+
+  // Clean and prepare search URL if not an explicit HTTP link
+  if (!isUrl) {
+    targetUrl = `https://www.google.com/maps/search/${encodeURIComponent(keywordOrUrl)}`;
+  }
 
   try {
-    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    );
 
-    // Handle Google consent banner if presented
+    // Use domcontentloaded instead of networkidle2 to prevent timing out on Google's background telemetry
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
+
+    // Handle Google Consent / Privacy Overlay if presented
     try {
       const consentBtn = await page.$('form[action*="consent"] button');
       if (consentBtn) await consentBtn.click();
     } catch {}
 
-    // CASE 1: User passed a single Google Maps Place URL directly
-    if (isUrl && (targetUrl.includes("/maps/place/") || targetUrl.includes("goo.gl"))) {
+    // Wait 2s for redirects (e.g., maps.app.goo.gl shortened links resolving)
+    await new Promise((r) => setTimeout(r, 2000));
+    const currentUrl = page.url();
+
+    // CASE 1: Single Specific Business URL (e.g. /maps/place/...)
+    if (currentUrl.includes("/maps/place/")) {
       await page.waitForSelector("h1", { timeout: 10000 });
-      
+
       const item = await page.evaluate((placeUrl: string) => {
         const name = document.querySelector("h1")?.textContent?.trim() || "";
         const address =
@@ -47,30 +59,35 @@ export async function scrapeGoogleMapsDetailed(
           google_maps_url: placeUrl,
           source: "Google Maps",
         };
-      }, targetUrl);
+      }, currentUrl);
 
       return item.name ? [item] : [];
     }
 
-    // CASE 2: Search keyword or search result URL (feed list)
+    // CASE 2: Search Query / Multi-Listing Feed Page
     try {
-      await page.waitForSelector('div[role="feed"], a[href*="/maps/place/"]', { timeout: 10000 });
+      await page.waitForSelector('div[role="feed"], a[href*="/maps/place/"]', { timeout: 12000 });
     } catch {
       return [];
     }
 
-    // Scroll to load listings
-    for (let i = 0; i < 4; i++) {
+    // Scroll feed to populate DOM cards
+    for (let i = 0; i < 5; i++) {
       await page.evaluate(() => {
         const feed = document.querySelector('div[role="feed"]');
-        if (feed) feed.scrollTop += 2000;
+        if (feed) {
+          feed.scrollTop += 3500;
+        } else {
+          window.scrollBy(0, 1000);
+        }
       });
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1200));
     }
 
-    // Extract all visible items
-    const listings: RawListing[] = await page.evaluate(() => {
+    // Extract listings safely from visible card nodes
+    const extractedListings: RawListing[] = await page.evaluate(() => {
       const items: RawListing[] = [];
+      const seenNames = new Set<string>();
       const placeLinks = Array.from(document.querySelectorAll('a[href*="/maps/place/"]'));
 
       placeLinks.forEach((link) => {
@@ -82,9 +99,13 @@ export async function scrapeGoogleMapsDetailed(
 
         const nameEl = card.querySelector("div.fontHeadlineSmall, .qBF1Pd, h1");
         const name = nameEl?.textContent?.trim() || "";
-        if (!name) return;
 
-        const websiteEl = card.querySelector('a[data-value="Website"]') as HTMLAnchorElement;
+        if (!name || seenNames.has(name.toLowerCase())) return;
+        seenNames.add(name.toLowerCase());
+
+        const websiteEl = card.querySelector(
+          'a[data-value="Website"], a[href*="http"]:not([href*="google"])'
+        ) as HTMLAnchorElement;
         const phoneEl = card.querySelector('button[data-item-id*="phone"]');
 
         items.push({
@@ -100,14 +121,12 @@ export async function scrapeGoogleMapsDetailed(
       return items;
     });
 
-    return listings;
+    return extractedListings;
   } catch (error) {
-    console.error("Google Maps Scraper Error:", error);
+    console.error("Google Maps extraction error:", error);
     return [];
   }
 }
-
-//Endeddd
 
 // Multi-page pagination loop for Yelp (?start=0, ?start=10, ?start=20...)
 export async function scrapeYelpPublic(
@@ -124,7 +143,7 @@ export async function scrapeYelpPublic(
     )}&start=${startParam}`;
 
     try {
-      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
 
       const items = await page.evaluate(() => {
         const results: any[] = [];
@@ -162,7 +181,7 @@ export async function scrapeYellowPagesPublic(
     )}&page=${pageNum}`;
 
     try {
-      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
 
       const items = await page.evaluate(() => {
         const results: any[] = [];
