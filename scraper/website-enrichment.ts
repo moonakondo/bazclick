@@ -1,5 +1,4 @@
 import * as cheerio from "cheerio";
-import { Page } from "puppeteer";
 
 export interface EnrichedData {
   email: string;
@@ -28,9 +27,9 @@ export function classifyEmailRole(email: string): string {
   return "General Contact";
 }
 
-// Google Search Fallback engine to achieve 80-90% email match rates
+// Google Search Fallback engine to achieve high email match rates
 export async function googleSearchEmailFallback(
-  page: Page,
+  page: any,
   websiteUrl: string
 ): Promise<string> {
   try {
@@ -43,10 +42,11 @@ export async function googleSearchEmailFallback(
     });
 
     const pageContent = await page.content();
-    const matches = pageContent.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
+    const rawMatches = pageContent.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
+    const matches: string[] = rawMatches || [];
 
     const validEmail = matches.find(
-      (e) => !e.endsWith(".png") && !e.endsWith(".jpg") && !e.includes("google") && !e.includes("schema")
+      (e: string) => !e.endsWith(".png") && !e.endsWith(".jpg") && !e.includes("google") && !e.includes("schema")
     );
 
     return validEmail || "N/A";
@@ -57,7 +57,7 @@ export async function googleSearchEmailFallback(
 
 export async function scrapeWebsiteContactsFast(
   url: string,
-  page?: Page
+  page?: any
 ): Promise<EnrichedData> {
   const result: EnrichedData = {
     email: "N/A",
@@ -90,7 +90,7 @@ export async function scrapeWebsiteContactsFast(
 
       const emailMatches = html.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
       const validEmails = Array.from(new Set(emailMatches)).filter(
-        (e) => !e.endsWith(".png") && !e.endsWith(".jpg") && !e.endsWith(".webp")
+        (e: string) => !e.endsWith(".png") && !e.endsWith(".jpg") && !e.endsWith(".webp")
       );
 
       if (validEmails.length > 0) {

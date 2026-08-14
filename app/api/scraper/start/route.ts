@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import puppeteer from "puppeteer-core";
+import puppeteerCore from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
 import {
   scrapeGoogleMapsDetailed,
@@ -13,8 +13,7 @@ import {
   isValidQualityLead,
 } from "@/scraper/website-enrichment";
 
-// Configure Next.js runtime limits for scraping
-export const maxDuration = 60; // Allows route to run up to 60s on Vercel
+export const maxDuration = 60; 
 export const dynamic = "force-dynamic";
 
 async function getBrowserInstance() {
@@ -22,11 +21,11 @@ async function getBrowserInstance() {
 
   if (isVercel) {
     // Vercel Serverless Environment
-    return await puppeteer.launch({
+    return await puppeteerCore.launch({
       args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
+      defaultViewport: { width: 1280, height: 800 },
       executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
+      headless: true,
     });
   } else {
     // Local Laptop Environment (Windows)
@@ -59,8 +58,8 @@ export async function POST(req: NextRequest) {
       try {
         sendEvent({ status: "status", message: "Launching browser engines..." });
 
-        const browser = await getBrowserInstance();
-        const page = await browser.newPage();
+        const browser: any = await getBrowserInstance();
+        const page: any = await browser.newPage();
         await page.setUserAgent(
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         );

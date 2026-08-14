@@ -1,5 +1,3 @@
-import { Page } from "puppeteer";
-
 export interface RawListing {
   name: string;
   address?: string;
@@ -11,7 +9,7 @@ export interface RawListing {
 
 // Infinite scroll for Google Maps (fetches up to target limit)
 export async function scrapeGoogleMapsDetailed(
-  page: Page,
+  page: any,
   keywordOrUrl: string,
   targetCount = 150
 ): Promise<RawListing[]> {
@@ -61,7 +59,7 @@ export async function scrapeGoogleMapsDetailed(
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 12000 });
 
-      const item = await page.evaluate((placeUrl) => {
+      const item = await page.evaluate((placeUrl: string) => {
         const name = document.querySelector("h1")?.textContent?.trim() || "";
         const address =
           document.querySelector('button[data-item-id="address"]')?.textContent?.trim() || "N/A";
@@ -89,7 +87,7 @@ export async function scrapeGoogleMapsDetailed(
 
 // Multi-page pagination loop for Yelp (?start=0, ?start=10, ?start=20...)
 export async function scrapeYelpPublic(
-  page: Page,
+  page: any,
   keyword: string,
   maxPages = 5
 ): Promise<RawListing[]> {
@@ -128,7 +126,7 @@ export async function scrapeYelpPublic(
 
 // Multi-page pagination loop for Yellow Pages (?page=1, ?page=2, ?page=3...)
 export async function scrapeYellowPagesPublic(
-  page: Page,
+  page: any,
   keyword: string,
   maxPages = 5
 ): Promise<RawListing[]> {
