@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 import {
   scrapeGoogleMapsDetailed,
   scrapeYelpPublic,
@@ -11,6 +12,31 @@ import {
   scrapeWebsiteContactsFast,
   isValidQualityLead,
 } from "@/scraper/website-enrichment";
+
+// Configure Next.js runtime limits for scraping
+export const maxDuration = 60; // Allows route to run up to 60s on Vercel
+export const dynamic = "force-dynamic";
+
+async function getBrowserInstance() {
+  const isVercel = process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+
+  if (isVercel) {
+    // Vercel Serverless Environment
+    return await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
+    });
+  } else {
+    // Local Laptop Environment (Windows)
+    const puppeteerLocal = await import("puppeteer");
+    return await puppeteerLocal.default.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--window-size=1280,800"],
+    });
+  }
+}
 
 export async function POST(req: NextRequest) {
   const { inputs, sources = ["google", "yelp", "yellowpages"] } = await req.json();
@@ -33,11 +59,7 @@ export async function POST(req: NextRequest) {
       try {
         sendEvent({ status: "status", message: "Launching browser engines..." });
 
-        const browser = await puppeteer.launch({
-          headless: true,
-          args: ["--no-sandbox", "--disable-setuid-sandbox", "--window-size=1280,800"],
-        });
-
+        const browser = await getBrowserInstance();
         const page = await browser.newPage();
         await page.setUserAgent(
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -51,20 +73,20 @@ export async function POST(req: NextRequest) {
 
           if (sources.includes("google")) {
             sendEvent({ status: "status", message: `Scanning Google Maps listings...` });
-            const mapResults = await scrapeGoogleMapsDetailed(page, cleanInput, 150);
+            const mapResults = await scrapeGoogleMapsDetailed(page, cleanInput, 100);
             rawListings.push(...mapResults);
           }
 
           if (!cleanInput.startsWith("http")) {
             if (sources.includes("yelp")) {
               sendEvent({ status: "status", message: `Navigating multi-page Yelp results...` });
-              const yelpResults = await scrapeYelpPublic(page, cleanInput, 5);
+              const yelpResults = await scrapeYelpPublic(page, cleanInput, 3);
               rawListings.push(...yelpResults);
             }
 
             if (sources.includes("yellowpages")) {
               sendEvent({ status: "status", message: `Navigating multi-page Yellow Pages results...` });
-              const ypResults = await scrapeYellowPagesPublic(page, cleanInput, 5);
+              const ypResults = await scrapeYellowPagesPublic(page, cleanInput, 3);
               rawListings.push(...ypResults);
             }
           }
