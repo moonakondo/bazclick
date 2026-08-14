@@ -21,13 +21,16 @@ async function getBrowserInstance() {
 
   if (isVercel) {
     // Vercel Serverless Environment
-    // Download chromium binary on demand if local binary doesn't exist
     const executablePath = await chromium.executablePath(
       `https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar`
     );
 
     return await puppeteerCore.launch({
-      args: chromium.args,
+      args: [
+        ...chromium.args,
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+      ],
       defaultViewport: { width: 1280, height: 800 },
       executablePath,
       headless: true,
@@ -37,7 +40,12 @@ async function getBrowserInstance() {
     const puppeteerLocal = await import("puppeteer");
     return await puppeteerLocal.default.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--window-size=1280,800"],
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1280,800",
+      ],
     });
   }
 }
