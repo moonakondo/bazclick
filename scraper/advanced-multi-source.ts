@@ -1,11 +1,9 @@
-import puppeteer from "puppeteer-extra";
-import type { Page } from "puppeteer";
-import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import puppeteer from "puppeteer-core";
+import type { Page, LaunchOptions } from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 import * as cheerio from "cheerio";
 import axios from "axios";
 import fs from "fs";
-
-puppeteer.use(StealthPlugin());
 
 export interface AdvancedLead {
   "Brand Name": string;
@@ -323,18 +321,43 @@ export async function deepAuditWebsite(url: string) {
 type LaunchOptionsType = Parameters<typeof puppeteer.launch>[0];
 
 async function getBrowserLaunchOptions(): Promise<LaunchOptionsType> {
-  const args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"];
+  const isVercel = Boolean(process.env.VERCEL);
+
+  if (isVercel) {
+    return {
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: true,
+    };
+  }
+
+  const args = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+  ];
+
   const systemPaths = [
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-    (process.env.LOCALAPPDATA || "") + "\\Google\\Chrome\\Application\\chrome.exe",
+    `${process.env.LOCALAPPDATA || ""}\\Google\\Chrome\\Application\\chrome.exe`,
   ];
-  for (const p of systemPaths) {
-    if (p && fs.existsSync(/*turbopackIgnore: true*/ p)) return { args, executablePath: p, headless: true };
-  }
-  return { args, headless: true };
-}
 
+  for (const executablePath of systemPaths) {
+    if (executablePath && fs.existsSync(executablePath)) {
+      return {
+        args,
+        executablePath,
+        headless: true,
+      };
+    }
+  }
+
+  throw new Error(
+    "Chrome executable not found. Install Google Chrome or run on Vercel with @sparticuz/chromium."
+  );
+}
 async function extractFromPlaceDetail(page: Page, listingUrl: string) {
   try {
     await page.goto(listingUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
