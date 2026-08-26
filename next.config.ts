@@ -8,9 +8,16 @@ const nextConfig: NextConfig = {
     "puppeteer-core",
     "@sparticuz/chromium",
   ],
+
   outputFileTracingIncludes: {
-    "/api/**/*": ["./node_modules/puppeteer/**/*"],
+    "/api/scraper/start": [
+      "./node_modules/@sparticuz/chromium/bin/**/*",
+    ],
+    "/api/scraper/advanced": [
+      "./node_modules/@sparticuz/chromium/bin/**/*",
+    ],
   },
+
   async headers() {
     return [
       {
@@ -18,7 +25,8 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Cache-Control",
-            value: "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+            value:
+              "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
           },
           {
             key: "Pragma",
