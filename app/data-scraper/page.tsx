@@ -21,6 +21,80 @@ export default function DataScraperPage() {
     setResults([]);
   }
 
+  // Runs a batch scrape from the list of keywords/URLs pulled out of an
+  // uploaded spreadsheet. Talks to the exact same /api/scraper/start
+  // endpoint and SSE event shape that ScraperForm uses for direct search
+  // (status / item / complete / error), so results land in the same table.
+  async function handleInputsParsed(inputs: string[]) {
+    if (!inputs.length) return;
+
+    handleClearResults();
+    setLoading(true);
+    setStatusText(`Starting batch scrape for ${inputs.length} input(s)...`);
+
+    try {
+      const res = await fetch("/api/scraper/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Batch uploads default to Google Maps only for now — the upload
+        // box has no source checkboxes of its own yet.
+        body: JSON.stringify({ inputs, sources: ["google"] }),
+      });
+
+      if (!res.body) {
+        setStatusText("No response stream from server.");
+        setLoading(false);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE messages are separated by a blank line ("\n\n")
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() || ""; // keep any incomplete trailing chunk for next read
+
+        for (const chunk of chunks) {
+          const line = chunk.trim();
+          if (!line.startsWith("data:")) continue;
+
+          const jsonStr = line.slice("data:".length).trim();
+          if (!jsonStr) continue;
+
+          let event: any;
+          try {
+            event = JSON.parse(jsonStr);
+          } catch {
+            continue; // skip malformed event rather than crashing the stream
+          }
+
+          if (event.status === "status") {
+            setStatusText(event.message || "");
+          } else if (event.status === "item") {
+            handleItemAdded(event.item);
+          } else if (event.status === "complete") {
+            setStatusText(event.message || "Done.");
+            setLoading(false);
+          } else if (event.status === "error") {
+            setStatusText(`Error: ${event.error || "Unknown error"}`);
+            setLoading(false);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Batch scrape error:", err);
+      setStatusText("Batch scrape failed — check your connection and try again.");
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       <Header />
@@ -56,9 +130,8 @@ export default function DataScraperPage() {
               <div>
                 <h2 className="mb-4 text-xl font-bold text-slate-900">Batch Spreadsheet Processing</h2>
                 <UploadBox
-                  onInputsParsed={(inputs) => {
-                    // Pre-fill or start batch scraping logic if needed
-                  }}
+                  disabled={loading}
+                  onInputsParsed={handleInputsParsed}
                 />
               </div>
             </div>

@@ -1,0 +1,5 @@
+2026/08/15-20:54:40.608 3544 Creating DB C:\Users\haque\Bazclick\my-next-app\.puppeteer-fb-session\Default\Local Storage\leveldb since it was missing.
+2026/08/15-20:54:40.731 3544 Reusing MANIFEST C:\Users\haque\Bazclick\my-next-app\.puppeteer-fb-session\Default\Local Storage\leveldb/MANIFEST-000001
+2026/08/15-20:56:41.111 3918 Level-0 table #5: started
+2026/08/15-20:56:41.126 3918 Level-0 table #5: 59066 bytes OK
+2026/08/15-20:56:41.136 3918 Delete type=0 #3

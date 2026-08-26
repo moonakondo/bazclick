@@ -1,9 +1,36 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@sparticuz/chromium"],
+  serverExternalPackages: [
+    "puppeteer",
+    "puppeteer-extra",
+    "puppeteer-extra-plugin-stealth",
+    "puppeteer-core",
+    "@sparticuz/chromium",
+  ],
   outputFileTracingIncludes: {
-    "/api/**/*": ["./node_modules/@sparticuz/chromium/bin/*"],
+    "/api/**/*": ["./node_modules/puppeteer/**/*"],
+  },
+  async headers() {
+    return [
+      {
+        source: "/api/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+          },
+          {
+            key: "Pragma",
+            value: "no-cache",
+          },
+          {
+            key: "Expires",
+            value: "0",
+          },
+        ],
+      },
+    ];
   },
 };
 

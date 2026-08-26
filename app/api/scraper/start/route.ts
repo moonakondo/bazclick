@@ -1,6 +1,6 @@
-import { NextRequest } from "next/server";
-import puppeteerCore from "puppeteer-core";
+import { NextResponse } from "next/server";
 import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 import {
   scrapeGoogleMapsDetailed,
   scrapeYelpPublic,
@@ -8,116 +8,124 @@ import {
   deduplicateListings,
   RawListing,
 } from "@/scraper/multi-source";
-import {
-  scrapeWebsiteContactsFast,
-  isValidQualityLead,
-} from "@/scraper/website-enrichment";
+import { scrapeWebsiteContactsFast } from "@/scraper/website-enrichment";
 
-export const maxDuration = 60; 
-export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 60; // Max allowed duration on Vercel hobby/pro tier
 
-async function getBrowserInstance() {
-  const isVercel = process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+export async function POST(req: Request) {
+  const { inputs, sources = ["google"] } = await req.json();
 
-  if (isVercel) {
-    // Vercel Serverless Environment
-    const executablePath = await chromium.executablePath(
-      `https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar`
+  if (!inputs || !Array.isArray(inputs) || inputs.length === 0) {
+    return NextResponse.json(
+      { error: "Inputs array is required." },
+      { status: 400 }
     );
-
-    return await puppeteerCore.launch({
-      args: [
-        ...chromium.args,
-        "--disable-blink-features=AutomationControlled",
-        "--no-sandbox",
-      ],
-      defaultViewport: { width: 1280, height: 800 },
-      executablePath,
-      headless: true,
-    });
-  } else {
-    // Local Laptop Environment (Windows)
-    const puppeteerLocal = await import("puppeteer");
-    return await puppeteerLocal.default.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-blink-features=AutomationControlled",
-        "--window-size=1280,800",
-      ],
-    });
-  }
-}
-
-export async function POST(req: NextRequest) {
-  const { inputs, sources = ["google", "yelp", "yellowpages"] } = await req.json();
-
-  if (!inputs || !Array.isArray(inputs) || !inputs.length) {
-    return new Response(JSON.stringify({ error: "No inputs provided." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
   }
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
+  const stream = new TransformStream();
+  const writer = stream.writable.getWriter();
+  const encoder = new TextEncoder();
 
-      const sendEvent = (data: any) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-      };
+  const sendEvent = (data: any) => {
+    writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+  };
 
-      try {
-        sendEvent({ status: "status", message: "Launching browser engines..." });
+  // Run scraper process asynchronously inside the stream lifecycle
+  (async () => {
+    let browser = null;
 
-        const browser: any = await getBrowserInstance();
-        const page: any = await browser.newPage();
-        await page.setUserAgent(
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        );
+    try {
+      sendEvent({ status: "status", message: "Launching browser engine..." });
 
-        let rawListings: RawListing[] = [];
+      const isLocal = process.env.NODE_ENV === "development";
+      const executablePath = isLocal
+        ? process.env.PUPPETEER_EXECUTABLE_PATH ||
+          "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" // Adjust path if local Chrome is elsewhere
+        : await chromium.executablePath();
 
-        for (const input of inputs) {
-          const cleanInput = input.trim();
-          if (!cleanInput) continue;
+      browser = await puppeteer.launch({
+        args: isLocal ? [] : chromium.args,
+        defaultViewport: { width: 1280, height: 800 },
+        executablePath,
+        headless: true,
+      });
 
-          if (sources.includes("google")) {
-            sendEvent({ status: "status", message: `Scanning Google Maps listings...` });
-            const mapResults = await scrapeGoogleMapsDetailed(page, cleanInput, 100);
-            rawListings.push(...mapResults);
+      const page = await browser.newPage();
+
+      for (const rawInput of inputs) {
+        const cleanInput = rawInput.trim();
+        if (!cleanInput) continue;
+
+        const isUrl = cleanInput.startsWith("http");
+        const rawListings: RawListing[] = [];
+
+        // 1. Google Maps Scraping (Targeting up to 100 leads per query/link)
+        if (sources.includes("google")) {
+          sendEvent({
+            status: "status",
+            message: `Scanning Google Maps for "${cleanInput}"...`,
+          });
+          const mapResults = await scrapeGoogleMapsDetailed(
+            page,
+            cleanInput,
+            100
+          );
+          rawListings.push(...mapResults);
+        }
+
+        // 2. Yelp & Yellow Pages (Only executed for text search keywords, skipped for URLs)
+        if (!isUrl) {
+          if (sources.includes("yelp")) {
+            sendEvent({
+              status: "status",
+              message: `Scanning Yelp listings for "${cleanInput}"...`,
+            });
+            const yelpResults = await scrapeYelpPublic(page, cleanInput, 2);
+            rawListings.push(...yelpResults);
           }
 
-          if (!cleanInput.startsWith("http")) {
-            if (sources.includes("yelp")) {
-              sendEvent({ status: "status", message: `Navigating multi-page Yelp results...` });
-              const yelpResults = await scrapeYelpPublic(page, cleanInput, 3);
-              rawListings.push(...yelpResults);
-            }
-
-            if (sources.includes("yellowpages")) {
-              sendEvent({ status: "status", message: `Navigating multi-page Yellow Pages results...` });
-              const ypResults = await scrapeYellowPagesPublic(page, cleanInput, 3);
-              rawListings.push(...ypResults);
-            }
+          if (sources.includes("yellowpages")) {
+            sendEvent({
+              status: "status",
+              message: `Scanning Yellow Pages listings for "${cleanInput}"...`,
+            });
+            const ypResults = await scrapeYellowPagesPublic(
+              page,
+              cleanInput,
+              2
+            );
+            rawListings.push(...ypResults);
           }
         }
 
-        const uniqueListings = deduplicateListings(rawListings);
-        const totalDiscovered = uniqueListings.length;
-
+        // Deduplicate extracted raw items
+        const deduplicated = deduplicateListings(rawListings);
         sendEvent({
           status: "status",
-          message: `Discovered ${totalDiscovered} potential listings. Extracting emails & social links...`,
+          message: `Found ${deduplicated.length} unique businesses. Enriching domain details...`,
         });
 
-        let validLeadsCount = 0;
+        // 3. Website Enrichment Phase (Extracts Emails, Socials, & Contact Info)
+        for (let i = 0; i < deduplicated.length; i++) {
+          const item = deduplicated[i];
 
-        for (let i = 0; i < uniqueListings.length; i++) {
-          const listing = uniqueListings[i];
+          sendEvent({
+            status: "status",
+            message: `[${i + 1}/${deduplicated.length}] Enriching ${item.name}...`,
+          });
 
-          let enrichment = {
+          // Default values in case enrichment fails or site has no website
+          let enrichmentData: {
+            email: string;
+            email_role: string;
+            facebook: string;
+            instagram: string;
+            linkedin: string;
+            twitter: string;
+            youtube: string;
+            tiktok: string;
+          } = {
             email: "N/A",
             email_role: "N/A",
             facebook: "N/A",
@@ -128,42 +136,54 @@ export async function POST(req: NextRequest) {
             tiktok: "N/A",
           };
 
-          if (listing.website && listing.website !== "N/A") {
-            enrichment = await scrapeWebsiteContactsFast(listing.website, page);
+          if (item.website && item.website !== "N/A") {
+            try {
+              // IMPORTANT: url comes first, page comes second —
+              // this matches scrapeWebsiteContactsFast's real signature
+              enrichmentData = await scrapeWebsiteContactsFast(
+                item.website,
+                page
+              );
+            } catch {
+              // Gracefully handle domain fetch timeouts
+            }
           }
 
-          if (!isValidQualityLead(enrichment)) {
-            continue;
-          }
-
-          validLeadsCount++;
-          const completeItem = { ...listing, ...enrichment };
-
+          // Emit finished lead to client UI instantly
           sendEvent({
             status: "item",
-            item: completeItem,
-            count: validLeadsCount,
-            message: `${validLeadsCount} Leads Scraped out of ${totalDiscovered} Discovered & Still Finding...`,
+            item: {
+              ...item,
+              email: enrichmentData.email,
+              email_role: enrichmentData.email_role,
+              facebook: enrichmentData.facebook,
+              instagram: enrichmentData.instagram,
+              linkedin: enrichmentData.linkedin,
+              twitter: enrichmentData.twitter,
+              youtube: enrichmentData.youtube,
+              tiktok: enrichmentData.tiktok,
+            },
           });
         }
-
-        await browser.close();
-
-        sendEvent({
-          status: "complete",
-          count: validLeadsCount,
-          message: `${validLeadsCount} Leads Scraped totally.`,
-        });
-
-        controller.close();
-      } catch (err: any) {
-        sendEvent({ status: "error", error: err.message || "Scraping failed." });
-        controller.close();
       }
-    },
-  });
 
-  return new Response(stream, {
+      sendEvent({
+        status: "complete",
+        message: "Scraping & enrichment task finished successfully!",
+      });
+    } catch (error: any) {
+      console.error("API Scraping error:", error);
+      sendEvent({
+        status: "error",
+        error: error?.message || "An unexpected error occurred during scraping.",
+      });
+    } finally {
+      if (browser) await browser.close();
+      writer.close();
+    }
+  })();
+
+  return new NextResponse(stream.readable, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",

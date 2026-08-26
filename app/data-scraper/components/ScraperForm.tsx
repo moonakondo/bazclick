@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SourceCoverageInfo, YELP_COVERAGE_NOTE, YELLOW_PAGES_COVERAGE_NOTE } from "./SourceTooltip";
 
 interface ScraperFormProps {
   onItemAdded: (item: any) => void;
@@ -118,26 +119,22 @@ export default function ScraperForm({
             />
             Google Maps
           </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              name="yelp"
-              checked={sources.yelp}
-              onChange={handleSourceChange}
-              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-            />
-            Yelp
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              name="yellowpages"
-              checked={sources.yellowpages}
-              onChange={handleSourceChange}
-              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-            />
-            Yellow Pages
-          </label>
+
+          <SourceCoverageInfo
+            label="Yelp"
+            name="yelp"
+            checked={sources.yelp}
+            onChange={handleSourceChange}
+            note={YELP_COVERAGE_NOTE}
+          />
+
+          <SourceCoverageInfo
+            label="Yellow Pages"
+            name="yellowpages"
+            checked={sources.yellowpages}
+            onChange={handleSourceChange}
+            note={YELLOW_PAGES_COVERAGE_NOTE}
+          />
         </div>
       </div>
 
