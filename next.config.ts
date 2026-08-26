@@ -7,27 +7,18 @@ const nextConfig: NextConfig = {
     "puppeteer-extra",
     "puppeteer-extra-plugin",
     "puppeteer-extra-plugin-stealth",
-    "@sparticuz/chromium",
-    "is-plain-object",
     "clone-deep",
     "merge-deep",
+    "is-plain-object",
+    "@sparticuz/chromium",
   ],
 
   outputFileTracingIncludes: {
     "/api/scraper/start": [
       "./node_modules/@sparticuz/chromium/bin/**/*",
     ],
-
     "/api/scraper/advanced": [
       "./node_modules/@sparticuz/chromium/bin/**/*",
-
-      "./node_modules/is-plain-object/**/*",
-      "./node_modules/clone-deep/**/*",
-      "./node_modules/merge-deep/**/*",
-
-      "./node_modules/puppeteer-extra/**/*",
-      "./node_modules/puppeteer-extra-plugin/**/*",
-      "./node_modules/puppeteer-extra-plugin-stealth/**/*",
     ],
   },
 
