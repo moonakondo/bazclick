@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 
-// Self-contained Header component to prevent missing module build errors
 function LocalHeader() {
   return (
     <header className="w-full py-4 border-b border-neutral-800 flex items-center justify-between">
@@ -18,27 +17,26 @@ function LocalHeader() {
   );
 }
 
-// Self-contained Footer component to prevent missing module build errors
 function LocalFooter() {
   return (
     <footer className="w-full py-6 mt-12 border-t border-neutral-800 text-center text-xs text-neutral-500">
-      <p>© {new Date().getFullYear()} Bazclick Intelligence. All rights reserved.</p>
+      <p>
+        © {new Date().getFullYear()} Bazclick Intelligence. All rights reserved.
+      </p>
     </footer>
   );
 }
 
-// AdvancedLead type definition (was missing, caused the original build error)
 interface AdvancedLead {
   "Brand Name": string;
-  "Website": string;
+  Website: string;
   "Brand Category": string;
-  "Address": string;
-  "Service Area": string;
-  "Email": string;
-  "Phone": string;
-  "Facebook": string;
-  "YouTube": string;
-  "Instagram": string;
+  Address: string;
+  Email: string;
+  Phone: string;
+  Facebook: string;
+  YouTube: string;
+  Instagram: string;
   "Instagram Followers": string;
   "FB Follower": string;
   "YouTube Subscriber": string;
@@ -74,7 +72,6 @@ const ALL_COLUMNS: (keyof AdvancedLead)[] = [
   "Website",
   "Brand Category",
   "Address",
-  "Service Area",
   "Email",
   "Phone",
   "Facebook",
@@ -110,20 +107,22 @@ const ALL_COLUMNS: (keyof AdvancedLead)[] = [
   "Send Email to Brand Author",
 ];
 
-const GLOW_TEXT = "[text-shadow:0_0_6px_rgba(255,255,255,0.45)]";
+const GLOW_TEXT =
+  "[text-shadow:0_0_6px_rgba(255,255,255,0.45)]";
+
 const GREEN_BTN =
   "bg-green-600 hover:bg-green-500 text-white shadow-[0_0_10px_2px_rgba(34,197,94,0.55)] hover:shadow-[0_0_16px_4px_rgba(34,197,94,0.8)] transition";
 
 export default function AdvancedDataScraperPage() {
-  const [keywords, setKeywords] = useState<string>(
+  const [keywords, setKeywords] = useState(
     "Keywords to Scrape Leads..."
   );
-  const [requireActiveAds, setRequireActiveAds] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [requireActiveAds, setRequireActiveAds] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [leads, setLeads] = useState<AdvancedLead[]>([]);
   const [selectedMail, setSelectedMail] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string>("");
-  const [errorMessage, setErrorMessage] = useState<string>("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   const handleStartScraping = async () => {
     setLoading(true);
@@ -133,13 +132,21 @@ export default function AdvancedDataScraperPage() {
 
     const keywordList = keywords
       .split(",")
-      .map((k) => k.trim())
-      .filter((k) => k.length > 0);
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+
+    if (keywordList.length === 0) {
+      setErrorMessage("Please enter at least one keyword.");
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch("/api/scraper/advanced", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           keywords: keywordList,
           requireActiveAds,
@@ -156,6 +163,7 @@ export default function AdvancedDataScraperPage() {
 
       while (true) {
         const { done, value } = await reader.read();
+
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
@@ -165,40 +173,48 @@ export default function AdvancedDataScraperPage() {
 
         for (const rawEvent of events) {
           const line = rawEvent.trim();
+
           if (!line.startsWith("data:")) continue;
 
-          const jsonStr = line.slice("data:".length).trim();
-          if (!jsonStr) continue;
+          const jsonString = line.slice(5).trim();
+
+          if (!jsonString) continue;
 
           try {
-            const data = JSON.parse(jsonStr);
-            switch (data.type) {
-              case "lead":
-                if (data.lead) {
-                  setLeads((prev) => [...prev, data.lead as AdvancedLead]);
-                }
-                break;
-              case "status":
-                setStatusMessage(data.message || "");
-                break;
-              case "error":
-                setErrorMessage(data.message || "An error occurred during scraping.");
-                break;
-              case "done":
-                setStatusMessage("");
-                break;
-              default:
-                break;
+            const data = JSON.parse(jsonString);
+
+            if (data.type === "lead" && data.lead) {
+              setLeads((previous) => [
+                ...previous,
+                data.lead as AdvancedLead,
+              ]);
             }
-          } catch (parseErr) {
-            console.error("Failed to parse SSE chunk:", line, parseErr);
+
+            if (data.type === "status") {
+              setStatusMessage(data.message || "");
+            }
+
+            if (data.type === "error") {
+              setErrorMessage(
+                data.message || "An error occurred during scraping."
+              );
+            }
+
+            if (data.type === "done") {
+              setStatusMessage("");
+            }
+          } catch (error) {
+            console.error("Failed to parse SSE event:", error);
           }
         }
       }
     } catch (error) {
       console.error("Failed to execute scrape job:", error);
+
       setErrorMessage(
-        error instanceof Error ? error.message : "Failed to execute scrape job."
+        error instanceof Error
+          ? error.message
+          : "Failed to execute scrape job."
       );
     } finally {
       setLoading(false);
@@ -212,28 +228,38 @@ export default function AdvancedDataScraperPage() {
   const exportToCSV = () => {
     if (leads.length === 0) return;
 
-    const csvRows = [
+    const rows = [
       ALL_COLUMNS.join(","),
       ...leads.map((lead) =>
-        ALL_COLUMNS.map((col) => {
-          const val = lead[col] || "";
-          return `"${String(val).replace(/"/g, '""')}"`;
+        ALL_COLUMNS.map((column) => {
+          const value = lead[column] ?? "";
+
+          return `"${String(value).replace(/"/g, '""')}"`;
         }).join(",")
       ),
     ];
 
-    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([rows.join("\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
+
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `brand_leads_full_${Date.now()}.csv`;
-    a.click();
+    const anchor = document.createElement("a");
+
+    anchor.href = url;
+    anchor.download = `brand_leads_${Date.now()}.csv`;
+    anchor.click();
+
+    window.URL.revokeObjectURL(url);
   };
 
-  const renderCellContent = (col: keyof AdvancedLead, lead: AdvancedLead) => {
-    const val = lead[col];
+  const renderCellContent = (
+    column: keyof AdvancedLead,
+    lead: AdvancedLead
+  ) => {
+    const value = lead[column];
 
-    if (col === "Send Email to Brand Author") {
+    if (column === "Send Email to Brand Author") {
       return (
         <button
           onClick={() => handleSendEmail(lead)}
@@ -244,10 +270,10 @@ export default function AdvancedDataScraperPage() {
       );
     }
 
-    if (col === "Automated Business Gap Mail") {
+    if (column === "Automated Business Gap Mail") {
       return (
         <button
-          onClick={() => setSelectedMail(String(val || ""))}
+          onClick={() => setSelectedMail(String(value || ""))}
           className={`px-3 py-1 rounded-md font-semibold text-xs border border-green-400 ${GREEN_BTN}`}
         >
           View Mail
@@ -255,11 +281,22 @@ export default function AdvancedDataScraperPage() {
       );
     }
 
-    if (["Website", "Facebook", "YouTube", "Instagram"].includes(col)) {
-      if (!val || val === "N/A") return <span className="text-neutral-400">N/A</span>;
+    if (
+      ["Website", "Facebook", "YouTube", "Instagram"].includes(
+        column
+      )
+    ) {
+      if (!value || value === "N/A") {
+        return (
+          <span className="text-neutral-400">
+            N/A
+          </span>
+        );
+      }
+
       return (
         <a
-          href={String(val)}
+          href={String(value)}
           target="_blank"
           rel="noreferrer"
           className={`text-green-400 font-medium hover:underline inline-flex items-center gap-1 ${GLOW_TEXT}`}
@@ -269,38 +306,48 @@ export default function AdvancedDataScraperPage() {
       );
     }
 
-    if (col === "FB Ads") {
-      const active = String(val || "").includes("Active");
+    if (column === "FB Ads") {
+      const active = String(value || "").includes("Active");
+
       return (
         <span
           className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold ${
-            active ? "bg-green-500/20 text-green-300 border border-green-500/50" : "bg-rose-500/20 text-rose-300 border border-rose-500/50"
+            active
+              ? "bg-green-500/20 text-green-300 border border-green-500/50"
+              : "bg-rose-500/20 text-rose-300 border border-rose-500/50"
           }`}
         >
-          {String(val || "N/A")}
+          {String(value || "N/A")}
         </span>
       );
     }
 
-    if (col === "Website Speed") {
-      const fast = String(val || "").includes("Fast");
-      const avg = String(val || "").includes("Average");
+    if (column === "Website Speed") {
+      const text = String(value || "");
+
+      const fast = text.includes("Fast");
+      const average = text.includes("Average");
+
       return (
         <span
           className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${
             fast
               ? "bg-green-500/20 text-green-300 border border-green-500/50"
-              : avg
+              : average
               ? "bg-amber-500/20 text-amber-300 border border-amber-500/50"
               : "bg-rose-500/20 text-rose-300 border border-rose-500/50"
           }`}
         >
-          {String(val || "N/A")}
+          {text || "N/A"}
         </span>
       );
     }
 
-    return <span className="text-white">{String(val || "N/A")}</span>;
+    return (
+      <span className="text-white">
+        {String(value || "N/A")}
+      </span>
+    );
   };
 
   return (
@@ -313,19 +360,28 @@ export default function AdvancedDataScraperPage() {
 
         <header className="mb-8 my-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-800 pb-6">
           <div>
-            <h1 className={`text-3xl font-extrabold tracking-tight text-white ${GLOW_TEXT}`}>
+            <h1
+              className={`text-3xl font-extrabold tracking-tight text-white ${GLOW_TEXT}`}
+            >
               Brand Intelligence & Lead Scraper
             </h1>
+
             <p className="text-neutral-300 text-sm mt-1">
-              Real-time audit across 38 performance data points per brand
+              Real-time audit across {ALL_COLUMNS.length} data points per brand
             </p>
           </div>
+
           <div className="flex items-center gap-3">
             <span
               className="px-4 py-2 rounded-lg border border-neutral-700 text-xs font-semibold text-white"
               style={{ backgroundColor: "#0a0a0a" }}
             >
-              Columns Mapped: <span className={`text-green-400 font-bold ${GLOW_TEXT}`}>{ALL_COLUMNS.length}</span>
+              Columns Mapped:{" "}
+              <span
+                className={`text-green-400 font-bold ${GLOW_TEXT}`}
+              >
+                {ALL_COLUMNS.length}
+              </span>
             </span>
           </div>
         </header>
@@ -339,13 +395,16 @@ export default function AdvancedDataScraperPage() {
               <label className="block text-xs font-bold uppercase tracking-wider text-neutral-300 mb-2">
                 Target Keywords
               </label>
+
               <input
                 type="text"
                 value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
+                onChange={(event) =>
+                  setKeywords(event.target.value)
+                }
                 className="w-full border border-neutral-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition"
                 style={{ backgroundColor: "#000000" }}
-                placeholder="interior design company Dhaka, home decor Dhaka"
+                placeholder="Real estate New York, real estate Los Angeles"
               />
             </div>
 
@@ -357,9 +416,12 @@ export default function AdvancedDataScraperPage() {
                 type="checkbox"
                 id="adsFilter"
                 checked={requireActiveAds}
-                onChange={(e) => setRequireActiveAds(e.target.checked)}
+                onChange={(event) =>
+                  setRequireActiveAds(event.target.checked)
+                }
                 className="w-4 h-4 text-green-600 rounded focus:ring-green-500 bg-black border-neutral-600 cursor-pointer"
               />
+
               <label
                 htmlFor="adsFilter"
                 className="text-xs font-medium text-neutral-200 cursor-pointer select-none"
@@ -378,7 +440,9 @@ export default function AdvancedDataScraperPage() {
                     : GREEN_BTN
                 }`}
               >
-                {loading ? "Analyzing Leads..." : "Run Scraper"}
+                {loading
+                  ? "Analyzing Leads..."
+                  : "Run Scraper"}
               </button>
 
               {leads.length > 0 && (
@@ -395,10 +459,17 @@ export default function AdvancedDataScraperPage() {
           {(statusMessage || errorMessage) && (
             <div className="mt-4 text-xs">
               {statusMessage && (
-                <p className={`text-green-300 ${GLOW_TEXT}`}>{statusMessage}</p>
+                <p
+                  className={`text-green-300 ${GLOW_TEXT}`}
+                >
+                  {statusMessage}
+                </p>
               )}
+
               {errorMessage && (
-                <p className="text-rose-400 font-semibold">{errorMessage}</p>
+                <p className="text-rose-400 font-semibold">
+                  {errorMessage}
+                </p>
               )}
             </div>
           )}
@@ -413,10 +484,16 @@ export default function AdvancedDataScraperPage() {
             style={{ backgroundColor: "#0a0a0a" }}
           >
             <span className="text-xs font-bold uppercase tracking-wider text-neutral-300">
-              Scraped Results: <span className={`text-white font-semibold ${GLOW_TEXT}`}>{leads.length} Records</span>
+              Scraped Results:{" "}
+              <span
+                className={`text-white font-semibold ${GLOW_TEXT}`}
+              >
+                {leads.length} Records
+              </span>
             </span>
+
             <span className="text-xs text-neutral-400">
-              Scroll horizontally to view all 38 columns →
+              Scroll horizontally to view all {ALL_COLUMNS.length} columns →
             </span>
           </div>
 
@@ -433,23 +510,25 @@ export default function AdvancedDataScraperPage() {
                   >
                     #
                   </th>
-                  {ALL_COLUMNS.map((col, i) => (
+
+                  {ALL_COLUMNS.map((column) => (
                     <th
-                      key={i}
-                      className={`p-4 border-b border-neutral-800 whitespace-nowrap ${
-                        i === 0 ? "sticky left-[50px] z-30 shadow-r" : ""
-                      }`}
-                      style={i === 0 ? { backgroundColor: "#000000" } : undefined}
+                      key={column}
+                      className="p-4 border-b border-neutral-800 whitespace-nowrap"
                     >
-                      {col}
+                      {column}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-800" style={{ backgroundColor: "#000000" }}>
+
+              <tbody
+                className="divide-y divide-neutral-800"
+                style={{ backgroundColor: "#000000" }}
+              >
                 {leads.map((lead, rowIndex) => (
                   <tr
-                    key={rowIndex}
+                    key={`${lead["Brand Name"]}-${rowIndex}`}
                     className="hover:bg-neutral-900 transition-colors"
                   >
                     <td
@@ -458,17 +537,13 @@ export default function AdvancedDataScraperPage() {
                     >
                       {rowIndex + 1}
                     </td>
-                    {ALL_COLUMNS.map((col, colIndex) => (
+
+                    {ALL_COLUMNS.map((column) => (
                       <td
-                        key={colIndex}
-                        className={`p-4 whitespace-nowrap max-w-[300px] truncate ${
-                          colIndex === 0
-                            ? "sticky left-[50px] z-10 font-bold text-white shadow-r"
-                            : ""
-                        }`}
-                        style={colIndex === 0 ? { backgroundColor: "#000000" } : undefined}
+                        key={column}
+                        className="p-4 whitespace-nowrap max-w-[300px] truncate"
                       >
-                        {renderCellContent(col, lead)}
+                        {renderCellContent(column, lead)}
                       </td>
                     ))}
                   </tr>
@@ -480,7 +555,13 @@ export default function AdvancedDataScraperPage() {
                       colSpan={ALL_COLUMNS.length + 1}
                       className="p-16 text-center text-neutral-400 text-sm"
                     >
-                      No brand data loaded yet. Click <span className={`text-green-400 font-semibold ${GLOW_TEXT}`}>"Run Scraper"</span> to begin extracting leads.
+                      No brand data loaded yet. Click{" "}
+                      <span
+                        className={`text-green-400 font-semibold ${GLOW_TEXT}`}
+                      >
+                        "Run Scraper"
+                      </span>{" "}
+                      to begin extracting leads.
                     </td>
                   </tr>
                 )}
@@ -498,22 +579,29 @@ export default function AdvancedDataScraperPage() {
             className="border border-neutral-700 rounded-2xl p-6 max-w-2xl w-full shadow-2xl"
             style={{ backgroundColor: "#0a0a0a" }}
           >
-            <h3 className={`text-lg font-bold text-white mb-4 ${GLOW_TEXT}`}>
+            <h3
+              className={`text-lg font-bold text-white mb-4 ${GLOW_TEXT}`}
+            >
               Automated Business Gap Pitch
             </h3>
+
             <div
               className="p-4 rounded-xl border border-neutral-800 font-mono text-xs text-neutral-200 leading-relaxed whitespace-pre-wrap max-h-[60vh] overflow-y-auto"
               style={{ backgroundColor: "#000000" }}
             >
               {selectedMail}
             </div>
+
             <div className="mt-6 flex justify-between items-center">
               <button
-                onClick={() => navigator.clipboard.writeText(selectedMail)}
+                onClick={() =>
+                  navigator.clipboard.writeText(selectedMail)
+                }
                 className={`px-4 py-2 font-semibold rounded-lg text-xs ${GREEN_BTN}`}
               >
                 Copy Content
               </button>
+
               <button
                 onClick={() => setSelectedMail(null)}
                 className="px-4 py-2 hover:bg-neutral-900 text-white font-semibold rounded-lg text-xs border border-neutral-700 transition"
