@@ -4,15 +4,18 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     "puppeteer",
     "puppeteer-core",
+    "puppeteer-extra",
+    "puppeteer-extra-plugin-stealth",
     "@sparticuz/chromium",
   ],
 
   outputFileTracingIncludes: {
-    "/api/scraper/start": [
-      "./node_modules/@sparticuz/chromium/bin/**/*",
-    ],
-    "/api/scraper/advanced": [
-      "./node_modules/@sparticuz/chromium/bin/**/*",
+    "/api/scraper/**/*": [
+      "./node_modules/@sparticuz/chromium/**/*",
+      "./node_modules/puppeteer/**/*",
+      "./node_modules/puppeteer-core/**/*",
+      "./node_modules/puppeteer-extra/**/*",
+      "./node_modules/puppeteer-extra-plugin-stealth/**/*",
     ],
   },
 
