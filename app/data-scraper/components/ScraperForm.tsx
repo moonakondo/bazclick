@@ -10,6 +10,21 @@ interface ScraperFormProps {
   onStatusUpdate: (status: string) => void;
 }
 
+interface ResumeState {
+  pendingInputs: string[];
+  currentInputListings?: Record<string, unknown>[];
+  currentInputLabel?: string;
+}
+
+type RunOutcome =
+  | { status: "complete" }
+  | { status: "paused"; resumeState: ResumeState }
+  | { status: "error" };
+
+// Safety cap so a bug on the server side (e.g. it keeps pausing without
+// ever making progress) can't loop this forever in the browser.
+const MAX_CONTINUATIONS = 60;
+
 export default function ScraperForm({
   onItemAdded,
   onClearResults,
@@ -26,6 +41,68 @@ export default function ScraperForm({
   const handleSourceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSources({ ...sources, [e.target.name]: e.target.checked });
   };
+
+  // Runs ONE request/stream cycle against /api/scraper/start and reports
+  // back whether it finished, errored, or got paused (with the resume
+  // token needed to continue). Item/status events are forwarded to the
+  // parent exactly as before — this part behaves identically to the
+  // original single-shot version.
+  async function runOneRequest(body: Record<string, unknown>): Promise<RunOutcome> {
+    const response = await fetch("/api/scraper/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok || !response.body) {
+      alert("Failed to establish stream connection with scraper.");
+      return { status: "error" };
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data: ")) continue;
+
+        try {
+          const data = JSON.parse(line.replace("data: ", ""));
+
+          if (data.status === "status") {
+            onStatusUpdate(data.message);
+          } else if (data.status === "item") {
+            onItemAdded(data.item);
+            if (data.message) onStatusUpdate(data.message);
+          } else if (data.status === "complete") {
+            onStatusUpdate(data.message || "Scraping completed!");
+            return { status: "complete" };
+          } else if (data.status === "paused") {
+            onStatusUpdate(data.message || "Continuing...");
+            return { status: "paused", resumeState: data.resumeState };
+          } else if (data.status === "error") {
+            alert(`Scraper Notice: ${data.error}`);
+            return { status: "error" };
+          }
+        } catch {
+          // Ignore partial chunk parse failures
+        }
+      }
+    }
+
+    // Stream ended without an explicit complete/paused/error event —
+    // treat as done rather than looping forever.
+    return { status: "complete" };
+  }
 
   const handleStartScraping = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,59 +122,29 @@ export default function ScraperForm({
       .filter(Boolean);
 
     try {
-      const response = await fetch("/api/scraper/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          inputs: activeInputs,
-          sources: selectedSources,
-        }),
+      let outcome = await runOneRequest({
+        inputs: activeInputs,
+        sources: selectedSources,
       });
 
-      if (!response.ok || !response.body) {
-        alert("Failed to establish stream connection with scraper.");
-        onLoading(false);
-        return;
+      let continuations = 0;
+      while (outcome.status === "paused" && continuations < MAX_CONTINUATIONS) {
+        continuations += 1;
+        outcome = await runOneRequest({
+          inputs: [],
+          sources: selectedSources,
+          resumeState: outcome.resumeState,
+        });
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() || ""; // Retain incomplete chunk in buffer
-
-        for (const part of parts) {
-          const line = part.trim();
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.replace("data: ", ""));
-
-              if (data.status === "status") {
-                onStatusUpdate(data.message);
-              } else if (data.status === "item") {
-                onItemAdded(data.item);
-                if (data.message) onStatusUpdate(data.message);
-              } else if (data.status === "complete") {
-                onStatusUpdate(data.message || "Scraping completed!");
-              } else if (data.status === "error") {
-                alert(`Scraper Notice: ${data.error}`);
-              }
-            } catch (err) {
-              // Ignore partial chunk parse failures
-            }
-          }
-        }
+      if (outcome.status === "paused") {
+        onStatusUpdate(
+          "Stopped after many continuations — this search may be unusually large. You can start again to keep going."
+        );
       }
     } catch (err: any) {
       console.warn("Stream read ended or dropped gracefully:", err);
     } finally {
-      // ALWAYS keep collected leads intact and reset loading spinner gently
       onLoading(false);
     }
   };
